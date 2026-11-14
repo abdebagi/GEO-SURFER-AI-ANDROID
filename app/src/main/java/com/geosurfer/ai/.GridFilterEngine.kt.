@@ -1,0 +1,276 @@
+package com.geosurfer.ai
+
+import kotlin.math.*
+
+object GridFilterEngine {
+
+// Gaussian Filter
+fun gaussian(
+    grid: Array<DoubleArray>,
+    radius: Int = 2,
+    sigma: Double = 1.0
+): Array<DoubleArray> {
+
+    require(radius >= 0 && sigma > 0.0)
+    val kernel = Array(2 * radius + 1) { i ->
+        DoubleArray(2 * radius + 1) { j ->
+            val x = i - radius
+            val y = j - radius
+            exp(-(x * x + y * y) / (2 * sigma * sigma))
+        }
+    }
+
+    return convolve(grid, kernel)
+}
+
+// Low Pass Filter
+fun lowPass(
+    grid: Array<DoubleArray>
+): Array<DoubleArray> {
+
+    val kernel = arrayOf(
+        doubleArrayOf(1.0, 1.0, 1.0),
+        doubleArrayOf(1.0, 1.0, 1.0),
+        doubleArrayOf(1.0, 1.0, 1.0)
+    )
+
+    return convolve(grid, kernel)
+}
+
+// High Pass Filter
+fun highPass(
+    grid: Array<DoubleArray>
+): Array<DoubleArray> {
+
+    val kernel = arrayOf(
+        doubleArrayOf(-1.0, -1.0, -1.0),
+        doubleArrayOf(-1.0,  8.0, -1.0),
+        doubleArrayOf(-1.0, -1.0, -1.0)
+    )
+
+    return convolve(grid, kernel)
+}
+
+// Median Filter
+fun median(
+    grid: Array<DoubleArray>,
+    radius: Int = 1
+): Array<DoubleArray> {
+
+    require(radius >= 0)
+    validate(grid)
+
+    val rows = grid.size
+    val cols = grid[0].size
+
+    return Array(rows) { r ->
+        DoubleArray(cols) { c ->
+
+            val values = mutableListOf<Double>()
+
+            for (i in -radius..radius) {
+                for (j in -radius..radius) {
+
+                    val y = (r + i).coerceIn(0, rows - 1)
+                    val x = (c + j).coerceIn(0, cols - 1)
+
+                    values.add(grid[y][x])
+                }
+            }
+
+            values.sort()
+            values[values.size / 2]
+        }
+    }
+}
+
+// Laplacian Filter
+fun laplacian(
+    grid: Array<DoubleArray>
+): Array<DoubleArray> {
+
+    val kernel = arrayOf(
+        doubleArrayOf(0.0, 1.0, 0.0),
+        doubleArrayOf(1.0, -4.0, 1.0),
+        doubleArrayOf(0.0, 1.0, 0.0)
+    )
+
+    return convolve(grid, kernel)
+}
+
+// Directional Filter - Horizontal
+fun directionalHorizontal(
+    grid: Array<DoubleArray>
+): Array<DoubleArray> {
+
+    val kernel = arrayOf(
+        doubleArrayOf(-1.0, -1.0, -1.0),
+        doubleArrayOf( 0.0,  0.0,  0.0),
+        doubleArrayOf( 1.0,  1.0,  1.0)
+    )
+
+    return convolve(grid, kernel)
+}
+
+// Directional Filter - Vertical
+fun directionalVertical(
+    grid: Array<DoubleArray>
+): Array<DoubleArray> {
+
+    val kernel = arrayOf(
+        doubleArrayOf(-1.0, 0.0, 1.0),
+        doubleArrayOf(-1.0, 0.0, 1.0),
+        doubleArrayOf(-1.0, 0.0, 1.0)
+    )
+
+    return convolve(grid, kernel)
+}
+
+// First Derivative - X
+fun firstDerivativeX(
+    grid: Array<DoubleArray>,
+    cellSize: Double = 1.0
+): Array<DoubleArray> {
+
+    require(cellSize > 0.0)
+    validate(grid)
+
+    val rows = grid.size
+    val cols = grid[0].size
+
+    return Array(rows) { r ->
+        DoubleArray(cols) { c ->
+
+            val left = grid[r][(c - 1).coerceAtLeast(0)]
+            val right = grid[r][(c + 1).coerceAtMost(cols - 1)]
+
+            (right - left) /
+                ((if (c == 0 || c == cols - 1) 1.0 else 2.0) * cellSize)
+        }
+    }
+}
+
+// First Derivative - Y
+fun firstDerivativeY(
+    grid: Array<DoubleArray>,
+    cellSize: Double = 1.0
+): Array<DoubleArray> {
+
+    require(cellSize > 0.0)
+    validate(grid)
+
+    val rows = grid.size
+    val cols = grid[0].size
+
+    return Array(rows) { r ->
+        DoubleArray(cols) { c ->
+
+            val top = grid[(r - 1).coerceAtLeast(0)][c]
+            val bottom = grid[(r + 1).coerceAtMost(rows - 1)][c]
+
+            (bottom - top) /
+                ((if (r == 0 || r == rows - 1) 1.0 else 2.0) * cellSize)
+        }
+    }
+}
+
+// Second Derivative - Laplacian
+fun secondDerivative(
+    grid: Array<DoubleArray>,
+    cellSize: Double = 1.0
+): Array<DoubleArray> {
+
+    require(cellSize > 0.0)
+    validate(grid)
+
+    val rows = grid.size
+    val cols = grid[0].size
+    val scale = cellSize * cellSize
+
+    return Array(rows) { r ->
+        DoubleArray(cols) { c ->
+
+            val center = grid[r][c]
+
+            val left = grid[r][(c - 1).coerceAtLeast(0)]
+            val right = grid[r][(c + 1).coerceAtMost(cols - 1)]
+
+            val top = grid[(r - 1).coerceAtLeast(0)][c]
+            val bottom = grid[(r + 1).coerceAtMost(rows - 1)][c]
+
+            (left + right + top + bottom - 4.0 * center) / scale
+        }
+    }
+}
+
+// General Convolution
+private fun convolve(
+    grid: Array<DoubleArray>,
+    kernel: Array<DoubleArray>
+): Array<DoubleArray> {
+
+    validate(grid)
+
+    require(kernel.isNotEmpty() && kernel.size % 2 == 1)
+    require(kernel.all {
+        it.size == kernel[0].size && it.size % 2 == 1
+    })
+
+    val rows = grid.size
+    val cols = grid[0].size
+
+    val kr = kernel.size / 2
+    val kc = kernel[0].size / 2
+
+    val kernelSum = kernel.sumOf { it.sum() }
+
+    val normalize = kernelSum != 0.0
+
+    return Array(rows) { r ->
+        DoubleArray(cols) { c ->
+
+            var sum = 0.0
+
+            for (i in kernel.indices) {
+                for (j in kernel[0].indices) {
+
+                    val y = (r + i - kr)
+                        .coerceIn(0, rows - 1)
+
+                    val x = (c + j - kc)
+                        .coerceIn(0, cols - 1)
+
+                    sum += grid[y][x] * kernel[i][j]
+                }
+            }
+
+            if (normalize) sum / kernelSum else sum
+        }
+    }
+}
+
+// Validate Grid
+private fun validate(grid: Array<DoubleArray>) {
+
+    require(grid.isNotEmpty()) {
+        "Grid cannot be empty"
+    }
+
+    require(grid[0].isNotEmpty()) {
+        "Grid rows cannot be empty"
+    }
+
+    val cols = grid[0].size
+
+    require(grid.all { it.size == cols }) {
+        "Grid must be rectangular"
+    }
+
+    require(grid.all { row ->
+        row.all { it.isFinite() }
+    }) {
+        "Grid contains invalid values"
+    }
+}
+
+}
