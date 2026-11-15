@@ -17,7 +17,7 @@ class CopernicusStacClient {
 
     companion object {
         private const val API_URL =
-            "https://stac.opensearch.dataspace.copernicus.eu/v1/search"
+    "https://stac.dataspace.copernicus.eu/v1/search"
     }
 
     private val executor = Executors.newSingleThreadExecutor()
