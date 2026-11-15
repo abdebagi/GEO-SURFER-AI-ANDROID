@@ -408,6 +408,8 @@ class MainActivity : AppCompatActivity() {
     }
     // SATELLITE DATA CENTER
 
+// SATELLITE DATA CENTER
+
 private fun showSatelliteDataCenter() {
 
     val layout = LinearLayout(this).apply {
@@ -491,9 +493,10 @@ private fun showSatelliteDataCenter() {
         .setView(ScrollView(this).apply {
             addView(layout)
         })
-        .setPositiveButton("PREPARE SEARCH") { _, _ ->
+        .setPositiveButton("SEARCH SATELLITES") { _, _ ->
 
             try {
+
                 val lat = latitude.text.toString().toDouble()
                 val lon = longitude.text.toString().toDouble()
                 val r = radius.text.toString().toDouble()
@@ -515,83 +518,73 @@ private fun showSatelliteDataCenter() {
                     "Cloud cover must be between 0 and 100"
                 }
 
-                val datePattern = Regex("""\d{4}-\d{2}-\d{2}""")
+                val datePattern =
+                    Regex("""\d{4}-\d{2}-\d{2}""")
 
-require(datePattern.matches(startDate.text.toString())) {
-    "Invalid start date. Use YYYY-MM-DD"
-}
+                val start = startDate.text.toString()
+                val end = endDate.text.toString()
 
-require(datePattern.matches(endDate.text.toString())) {
-    "Invalid end date. Use YYYY-MM-DD"
-}
+                require(datePattern.matches(start)) {
+                    "Invalid start date"
+                }
 
-require(startDate.text.toString() <= endDate.text.toString()) {
-    "Start date must be before end date"
-}
+                require(datePattern.matches(end)) {
+                    "Invalid end date"
+                }
 
-if (satellite.selectedItem.toString() != "Sentinel-2") {
-    throw Exception("Currently only Sentinel-2 search is enabled")
-}
+                require(start <= end) {
+                    "Start date must be before end date"
+                }
 
-val progress = android.app.ProgressDialog(this).apply {
-    setMessage("Searching Copernicus satellite archive...")
-    setCancelable(false)
-    show()
-}
+                require(
+                    satellite.selectedItem.toString() == "Sentinel-2"
+                ) {
+                    "Currently only Sentinel-2 search is enabled"
+                }
 
-CopernicusStacClient().searchSentinel2(
-    latitude = lat,
-    longitude = lon,
-    radiusKm = r,
-    startDate = startDate.text.toString(),
-    endDate = endDate.text.toString(),
-    maxCloud = c,
+                val progress =
+                    android.app.ProgressDialog(this).apply {
+                        setMessage(
+                            "Searching Copernicus satellite archive..."
+                        )
+                        setCancelable(false)
+                        show()
+                    }
 
-    onSuccess = { items ->
-        progress.dismiss()
-        showSatelliteResults(items)
-    },
+                CopernicusStacClient().searchSentinel2(
 
-    onError = { error ->
-        progress.dismiss()
+                    latitude = lat,
+                    longitude = lon,
+                    radiusKm = r,
+                    startDate = start,
+                    endDate = end,
+                    maxCloud = c,
 
-        AlertDialog.Builder(this)
-            .setTitle("COPERNICUS CONNECTION ERROR")
-            .setMessage(error)
-            .setPositiveButton("OK", null)
-            .show()
-    }
-)
+                    onSuccess = { items ->
 
-                    Latitude: $lat
-                    Longitude: $lon
-                    Radius: $r km
+                        progress.dismiss()
+                        showSatelliteResults(items)
 
-                    Satellite: ${satellite.selectedItem}
+                    },
 
-                    Cloud Cover: $c%
+                    onError = { error ->
 
-                    Start: ${startDate.text}
-                    End: ${endDate.text}
+                        progress.dismiss()
 
-                    Parameters validated.
-
-                    Satellite API connection
-                    will be implemented next.
-                """.trimIndent()
-
-                AlertDialog.Builder(this)
-                    .setTitle("SEARCH CONFIGURATION")
-                    .setMessage(result)
-                    .setPositiveButton("OK", null)
-                    .show()
+                        AlertDialog.Builder(this)
+                            .setTitle("COPERNICUS CONNECTION ERROR")
+                            .setMessage(error)
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+                )
 
             } catch (e: Exception) {
 
                 AlertDialog.Builder(this)
                     .setTitle("INPUT ERROR")
                     .setMessage(
-                        e.message ?: "Invalid coordinates"
+                        e.message ?: "Invalid input"
                     )
                     .setPositiveButton("OK", null)
                     .show()
@@ -600,13 +593,20 @@ CopernicusStacClient().searchSentinel2(
         .setNegativeButton("CANCEL", null)
         .show()
 }
+
+
+// DISPLAY SATELLITE RESULTS
+
 private fun showSatelliteResults(
     items: List<SatelliteItem>
 ) {
 
     val message = if (items.isEmpty()) {
+
         "No Sentinel-2 images found for this area and date range."
+
     } else {
+
         items.mapIndexed { index, item ->
 
             """
@@ -619,7 +619,9 @@ private fun showSatelliteResults(
             CLOUD COVER: ${item.cloudCover}%
             """.trimIndent()
 
-        }.joinToString("\n\n--------------------\n\n")
+        }.joinToString(
+            "\n\n--------------------\n\n"
+        )
     }
 
     val scroll = ScrollView(this)
@@ -639,4 +641,5 @@ private fun showSatelliteResults(
         .setPositiveButton("DONE", null)
         .show()
 }
+
 }
