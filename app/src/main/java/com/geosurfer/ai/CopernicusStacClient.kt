@@ -171,15 +171,6 @@ results.add(
         assets = assetLinks
     )
 )
-                            SatelliteItem(
-                                id = feature.optString("id"),
-                                date = properties.optString("datetime"),
-                                cloudCover = properties.optDouble(
-                                    "eo:cloud_cover",
-                                    -1.0
-                                )
-                            )
-                        )
                     }
                 }
 
