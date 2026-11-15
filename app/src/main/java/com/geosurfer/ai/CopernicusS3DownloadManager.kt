@@ -6,6 +6,7 @@ import android.os.Looper
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URI
@@ -273,7 +274,7 @@ class CopernicusS3DownloadManager(
     ): HttpUrl {
 
         val builder =
-            HttpUrl.parse(ENDPOINT)!!.newBuilder()
+    ENDPOINT.toHttpUrl().newBuilder()
 
         builder.addPathSegment(bucket)
 
