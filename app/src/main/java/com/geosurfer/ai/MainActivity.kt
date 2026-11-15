@@ -515,8 +515,53 @@ private fun showSatelliteDataCenter() {
                     "Cloud cover must be between 0 and 100"
                 }
 
-                val result = """
-                    SATELLITE SEARCH PARAMETERS
+                val datePattern = Regex("""\d{4}-\d{2}-\d{2}""")
+
+require(datePattern.matches(startDate.text.toString())) {
+    "Invalid start date. Use YYYY-MM-DD"
+}
+
+require(datePattern.matches(endDate.text.toString())) {
+    "Invalid end date. Use YYYY-MM-DD"
+}
+
+require(startDate.text.toString() <= endDate.text.toString()) {
+    "Start date must be before end date"
+}
+
+if (satellite.selectedItem.toString() != "Sentinel-2") {
+    throw Exception("Currently only Sentinel-2 search is enabled")
+}
+
+val progress = android.app.ProgressDialog(this).apply {
+    setMessage("Searching Copernicus satellite archive...")
+    setCancelable(false)
+    show()
+}
+
+CopernicusStacClient().searchSentinel2(
+    latitude = lat,
+    longitude = lon,
+    radiusKm = r,
+    startDate = startDate.text.toString(),
+    endDate = endDate.text.toString(),
+    maxCloud = c,
+
+    onSuccess = { items ->
+        progress.dismiss()
+        showSatelliteResults(items)
+    },
+
+    onError = { error ->
+        progress.dismiss()
+
+        AlertDialog.Builder(this)
+            .setTitle("COPERNICUS CONNECTION ERROR")
+            .setMessage(error)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+)
 
                     Latitude: $lat
                     Longitude: $lon
@@ -553,6 +598,45 @@ private fun showSatelliteDataCenter() {
             }
         }
         .setNegativeButton("CANCEL", null)
+        .show()
+}
+private fun showSatelliteResults(
+    items: List<SatelliteItem>
+) {
+
+    val message = if (items.isEmpty()) {
+        "No Sentinel-2 images found for this area and date range."
+    } else {
+        items.mapIndexed { index, item ->
+
+            """
+            IMAGE ${index + 1}
+
+            ID: ${item.id}
+
+            DATE: ${item.date}
+
+            CLOUD COVER: ${item.cloudCover}%
+            """.trimIndent()
+
+        }.joinToString("\n\n--------------------\n\n")
+    }
+
+    val scroll = ScrollView(this)
+
+    val output = TextView(this).apply {
+        text = message
+        textSize = 14f
+        setTextColor(Color.BLACK)
+        setPadding(20, 20, 20, 20)
+    }
+
+    scroll.addView(output)
+
+    AlertDialog.Builder(this)
+        .setTitle("SENTINEL-2 SEARCH RESULTS")
+        .setView(scroll)
+        .setPositiveButton("DONE", null)
         .show()
 }
 }
