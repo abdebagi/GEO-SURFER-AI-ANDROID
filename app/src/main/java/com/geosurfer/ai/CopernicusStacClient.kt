@@ -1,234 +1,396 @@
 package com.geosurfer.ai
 
+import android.os.Handler
+import android.os.Looper
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDate
 import java.util.concurrent.Executors
-import android.os.Handler
-import android.os.Looper
 
 data class SatelliteItem(
-    val id: String,
-    val date: String,
-    val cloudCover: Double,
-    val assets: Map<String, String>
+val id: String,
+val date: String,
+val cloudCover: Double,
+val assets: Map<String, String>
 )
 
 class CopernicusStacClient {
 
-    companion object {
-        private const val API_URL =
-    "https://stac.dataspace.copernicus.eu/v1/search"
-    }
+companion object {
+    private const val API_URL =
+        "https://stac.dataspace.copernicus.eu/v1/search"
 
-    private val executor = Executors.newSingleThreadExecutor()
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private const val PAGE_LIMIT = 200
+    private const val MAX_PAGES = 5
 
-    fun searchSentinel2(
-        latitude: Double,
-        longitude: Double,
-        radiusKm: Double,
-        startDate: String,
-        endDate: String,
-        maxCloud: Double,
-        onSuccess: (List<SatelliteItem>) -> Unit,
-        onError: (String) -> Unit
-    ) {
+    val SPECTRAL_BANDS = listOf(
+        "B02",
+        "B03",
+        "B04",
+        "B08",
+        "B11",
+        "B12"
+    )
+}
 
-        executor.execute {
+private val executor =
+    Executors.newSingleThreadExecutor()
 
-            try {
+private val mainHandler =
+    Handler(Looper.getMainLooper())
 
-                require(latitude in -90.0..90.0)
-                require(longitude in -180.0..180.0)
-                require(radiusKm > 0.0)
-                require(maxCloud in 0.0..100.0)
+fun searchSentinel2(
+    latitude: Double,
+    longitude: Double,
+    radiusKm: Double,
+    startDate: String,
+    endDate: String,
+    maxCloud: Double,
+    onSuccess: (List<SatelliteItem>) -> Unit,
+    onError: (String) -> Unit
+) {
 
-                val geometry = createCircle(
-                    latitude,
-                    longitude,
-                    radiusKm
+    executor.execute {
+
+        try {
+
+            require(latitude.isFinite() &&
+                latitude in -90.0..90.0) {
+                "Invalid latitude"
+            }
+
+            require(longitude.isFinite() &&
+                longitude in -180.0..180.0) {
+                "Invalid longitude"
+            }
+
+            require(radiusKm.isFinite() &&
+                radiusKm > 0.0 &&
+                radiusKm <= 500.0) {
+                "Radius must be between 0 and 500 km"
+            }
+
+            require(maxCloud.isFinite() &&
+                maxCloud in 0.0..100.0) {
+                "Invalid cloud cover"
+            }
+
+            val start = LocalDate.parse(startDate)
+            val end = LocalDate.parse(endDate)
+
+            require(!start.isAfter(end)) {
+                "Start date must be before end date"
+            }
+
+            val geometry = createCircle(
+                latitude,
+                longitude,
+                radiusKm
+            )
+
+            val requestBody = JSONObject().apply {
+
+                put(
+                    "collections",
+                    JSONArray().put("sentinel-2-l2a")
                 )
 
-                val body = JSONObject().apply {
+                put("intersects", geometry)
 
-                    put(
-                        "collections",
-                        org.json.JSONArray().put("sentinel-2-l2a")
-                    )
-
-                    put("intersects", geometry)
-
-                    put(
-                        "datetime",
-                        "${startDate}T00:00:00Z/" +
+                put(
+                    "datetime",
+                    "${startDate}T00:00:00Z/" +
                         "${endDate}T23:59:59Z"
-                    )
+                )
 
-                    put("limit", 50)
+                put("limit", PAGE_LIMIT)
 
-                    put(
-                        "query",
+                put(
+                    "query",
+                    JSONObject().put(
+                        "eo:cloud_cover",
                         JSONObject().put(
-                            "eo:cloud_cover",
-                            JSONObject().put("lte", maxCloud)
+                            "lte",
+                            maxCloud
                         )
                     )
-                }
+                )
+            }
 
-                val connection =
-                    URL(API_URL).openConnection()
-                        as HttpURLConnection
+            val collected =
+                LinkedHashMap<String, SatelliteItem>()
 
-                connection.apply {
-                    requestMethod = "POST"
-                    connectTimeout = 30000
-                    readTimeout = 60000
-                    doOutput = true
+            var nextUrl = API_URL
+            var nextMethod = "POST"
+            var nextBody: JSONObject? = requestBody
 
-                    setRequestProperty(
-                        "Content-Type",
-                        "application/json"
-                    )
+            var pageCount = 0
 
-                    setRequestProperty(
-                        "Accept",
-                        "application/geo+json"
-                    )
-                }
+            while (
+                pageCount < MAX_PAGES &&
+                nextUrl.isNotBlank()
+            ) {
 
-                connection.outputStream.use {
-                    it.write(body.toString().toByteArray(Charsets.UTF_8))
-                }
+                val json = fetchPage(
+                    url = nextUrl,
+                    method = nextMethod,
+                    body = nextBody
+                )
 
-                val status = connection.responseCode
+                val features =
+                    json.optJSONArray("features")
+                        ?: JSONArray()
 
-                val responseStream =
-                    if (status in 200..299) {
-                        connection.inputStream
-                    } else {
-                        connection.errorStream
+                for (i in 0 until features.length()) {
+
+                    val feature =
+                        features.optJSONObject(i)
+                            ?: continue
+
+                    val properties =
+                        feature.optJSONObject("properties")
+                            ?: continue
+
+                    val assetsObject =
+                        feature.optJSONObject("assets")
+                            ?: JSONObject()
+
+                    val assetLinks =
+                        mutableMapOf<String, String>()
+
+                    val keys = assetsObject.keys()
+
+                    while (keys.hasNext()) {
+
+                        val key = keys.next()
+
+                        val asset =
+                            assetsObject.optJSONObject(key)
+
+                        val href =
+                            asset?.optString("href", "")
+                                ?: ""
+
+                        if (href.isNotBlank()) {
+                            assetLinks[key] = href
+                        }
                     }
 
-                val response = responseStream
-                    ?.bufferedReader()
-                    ?.use { it.readText() }
-                    ?: ""
+                    val id = feature.optString("id", "")
 
-                connection.disconnect()
+                    if (id.isBlank()) continue
 
-                if (status !in 200..299) {
-                    throw Exception(
-                        "Copernicus HTTP $status: $response"
+                    collected[id] = SatelliteItem(
+                        id = id,
+                        date = properties.optString(
+                            "datetime",
+                            ""
+                        ),
+                        cloudCover = properties.optDouble(
+                            "eo:cloud_cover",
+                            -1.0
+                        ),
+                        assets = assetLinks
                     )
                 }
 
-                val json = JSONObject(response)
-                val features = json.optJSONArray("features")
+                pageCount++
 
-                val results = mutableListOf<SatelliteItem>()
+                val links =
+                    json.optJSONArray("links")
 
-                if (features != null) {
+                val nextLink = findNextLink(links)
 
-                    for (i in 0 until features.length()) {
+                if (nextLink == null) {
+                    nextUrl = ""
+                } else {
 
-                        val feature = features.getJSONObject(i)
-                        val properties =
-                            feature.optJSONObject("properties")
-                                ?: continue
+                    nextUrl = nextLink.optString(
+                        "href",
+                        ""
+                    )
 
-                        val assetsObject =
-    feature.optJSONObject("assets")
+                    nextMethod = nextLink.optString(
+                        "method",
+                        "GET"
+                    ).uppercase()
 
-val assetLinks = mutableMapOf<String, String>()
+                    nextBody =
+                        nextLink.optJSONObject("body")
+                            ?: if (nextMethod == "POST") {
+                                requestBody
+                            } else {
+                                null
+                            }
+                }
+            }
 
-if (assetsObject != null) {
+            val results = collected.values
+                .sortedWith(
+                    compareBy<SatelliteItem> {
+                        if (it.cloudCover < 0.0) {
+                            Double.MAX_VALUE
+                        } else {
+                            it.cloudCover
+                        }
+                    }.thenByDescending {
+                        it.date
+                    }
+                )
 
-    val keys = assetsObject.keys()
+            mainHandler.post {
+                onSuccess(results)
+            }
 
-    while (keys.hasNext()) {
+        } catch (e: Exception) {
 
-        val key = keys.next()
-
-        val asset = assetsObject.optJSONObject(key)
-
-        val href = asset?.optString("href", "") ?: ""
-
-        if (href.isNotBlank()) {
-            assetLinks[key] = href
+            mainHandler.post {
+                onError(
+                    e.message
+                        ?: "Unknown Copernicus error"
+                )
+            }
         }
     }
 }
 
-results.add(
-    SatelliteItem(
-        id = feature.optString("id"),
-        date = properties.optString("datetime"),
-        cloudCover = properties.optDouble(
-            "eo:cloud_cover",
-            -1.0
-        ),
-        assets = assetLinks
-    )
-)
-                    }
-                }
+private fun fetchPage(
+    url: String,
+    method: String,
+    body: JSONObject?
+): JSONObject {
 
-                mainHandler.post {
-                    onSuccess(results)
-                }
+    val connection =
+        URL(url).openConnection() as HttpURLConnection
 
-            } catch (e: Exception) {
+    try {
 
-                mainHandler.post {
-                    onError(
-                        e.message ?: "Unknown connection error"
-                    )
-                }
+        connection.apply {
+
+            requestMethod = method
+
+            connectTimeout = 30000
+            readTimeout = 60000
+
+            setRequestProperty(
+                "Accept",
+                "application/geo+json, application/json"
+            )
+
+            if (method == "POST") {
+
+                doOutput = true
+
+                setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
             }
         }
-    }
 
-    private fun createCircle(
-        latitude: Double,
-        longitude: Double,
-        radiusKm: Double
-    ): JSONObject {
+        if (method == "POST") {
 
-        val coordinates = org.json.JSONArray()
+            connection.outputStream.use {
+                it.write(
+                    (body ?: JSONObject())
+                        .toString()
+                        .toByteArray(Charsets.UTF_8)
+                )
+            }
+        }
 
-        val latOffset = radiusKm / 111.32
+        val status = connection.responseCode
 
-        val cosLat = Math.cos(
-            Math.toRadians(latitude)
-        ).coerceAtLeast(0.01)
+        val stream =
+            if (status in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
 
-        val lonOffset = radiusKm / (111.32 * cosLat)
+        val response = stream
+            ?.bufferedReader()
+            ?.use { it.readText() }
+            ?: ""
 
-        for (i in 0..36) {
+        if (status !in 200..299) {
 
-            val angle = Math.toRadians(i * 10.0)
-
-            val lon = longitude +
-                lonOffset * Math.cos(angle)
-
-            val lat = latitude +
-                latOffset * Math.sin(angle)
-
-            coordinates.put(
-                org.json.JSONArray()
-                    .put(lon)
-                    .put(lat)
+            throw Exception(
+                "Copernicus HTTP $status: $response"
             )
         }
 
-        return JSONObject().apply {
-            put("type", "Polygon")
+        return JSONObject(response)
 
-            put(
-                "coordinates",
-                org.json.JSONArray().put(coordinates)
-            )
+    } finally {
+
+        connection.disconnect()
+    }
+}
+
+private fun findNextLink(
+    links: JSONArray?
+): JSONObject? {
+
+    if (links == null) return null
+
+    for (i in 0 until links.length()) {
+
+        val link = links.optJSONObject(i)
+            ?: continue
+
+        if (link.optString("rel") == "next") {
+            return link
         }
     }
+
+    return null
+}
+
+private fun createCircle(
+    latitude: Double,
+    longitude: Double,
+    radiusKm: Double
+): JSONObject {
+
+    val coordinates = JSONArray()
+
+    val latOffset = radiusKm / 111.32
+
+    val cosLat = Math.cos(
+        Math.toRadians(latitude)
+    ).coerceAtLeast(0.01)
+
+    val lonOffset = radiusKm / (111.32 * cosLat)
+
+    for (i in 0..36) {
+
+        val angle = Math.toRadians(i * 10.0)
+
+        val lon = longitude +
+            lonOffset * Math.cos(angle)
+
+        val lat = latitude +
+            latOffset * Math.sin(angle)
+
+        coordinates.put(
+            JSONArray()
+                .put(lon)
+                .put(lat)
+        )
+    }
+
+    return JSONObject().apply {
+
+        put("type", "Polygon")
+
+        put(
+            "coordinates",
+            JSONArray().put(coordinates)
+        )
+    }
+}
+
 }
