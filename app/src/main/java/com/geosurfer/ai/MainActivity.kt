@@ -980,10 +980,10 @@ val container = ScrollView(this).apply {
 
     addView(
         imageView,
-        ScrollView.LayoutParams(
-            ScrollView.LayoutParams.MATCH_PARENT,
-            ScrollView.LayoutParams.WRAP_CONTENT
-        )
+        LinearLayout.LayoutParams(
+    LinearLayout.LayoutParams.MATCH_PARENT,
+    LinearLayout.LayoutParams.WRAP_CONTENT
+)
     )
 }
 
