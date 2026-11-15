@@ -10,7 +10,8 @@ import android.os.Looper
 data class SatelliteItem(
     val id: String,
     val date: String,
-    val cloudCover: Double
+    val cloudCover: Double,
+    val assets: Map<String, String>
 )
 
 class CopernicusStacClient {
@@ -136,7 +137,40 @@ class CopernicusStacClient {
                             feature.optJSONObject("properties")
                                 ?: continue
 
-                        results.add(
+                        val assetsObject =
+    feature.optJSONObject("assets")
+
+val assetLinks = mutableMapOf<String, String>()
+
+if (assetsObject != null) {
+
+    val keys = assetsObject.keys()
+
+    while (keys.hasNext()) {
+
+        val key = keys.next()
+
+        val asset = assetsObject.optJSONObject(key)
+
+        val href = asset?.optString("href", "") ?: ""
+
+        if (href.isNotBlank()) {
+            assetLinks[key] = href
+        }
+    }
+}
+
+results.add(
+    SatelliteItem(
+        id = feature.optString("id"),
+        date = properties.optString("datetime"),
+        cloudCover = properties.optDouble(
+            "eo:cloud_cover",
+            -1.0
+        ),
+        assets = assetLinks
+    )
+)
                             SatelliteItem(
                                 id = feature.optString("id"),
                                 date = properties.optString("datetime"),
