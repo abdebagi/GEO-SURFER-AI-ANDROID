@@ -77,15 +77,27 @@ class MainActivity : AppCompatActivity() {
                 isFocusable = true
 
                 setOnClickListener {
-                    if (feature.contains("Surfer Filters")) {
-                        showSurferFilters()
-                    } else {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "$feature - Module under development",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+               when {
+    feature.contains("Surfer Filters") -> {
+        showSurferFilters()
+    }
+
+    feature.contains("Satellite Image Analysis") -> {
+        showSatelliteDataCenter()
+    }
+
+    feature.contains("Coordinate Explorer") -> {
+        showSatelliteDataCenter()
+    }
+
+    else -> {
+        Toast.makeText(
+            this@MainActivity,
+            "$feature - Module under development",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+               } 
                 }
             }
 
@@ -394,4 +406,153 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("DONE", null)
             .show()
     }
+    // SATELLITE DATA CENTER
+
+private fun showSatelliteDataCenter() {
+
+    val layout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(25, 15, 25, 10)
+    }
+
+    fun addLabel(text: String) {
+        layout.addView(TextView(this).apply {
+            this.text = text
+            textSize = 14f
+            setTextColor(Color.BLACK)
+            setPadding(0, 10, 0, 5)
+        })
+    }
+
+    fun addInput(hintText: String, value: String): EditText {
+        return EditText(this).apply {
+            hint = hintText
+            setText(value)
+            textSize = 15f
+            inputType =
+                InputType.TYPE_CLASS_NUMBER or
+                InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                InputType.TYPE_NUMBER_FLAG_SIGNED
+
+            layout.addView(this)
+        }
+    }
+
+    addLabel("STUDY COORDINATES")
+
+    val latitude = addInput("Latitude", "13.3500")
+    val longitude = addInput("Longitude", "35.0000")
+
+    addLabel("STUDY RADIUS (KM)")
+
+    val radius = addInput("Radius", "5")
+
+    addLabel("SATELLITE SOURCE")
+
+    val satellite = Spinner(this)
+
+    val sources = arrayOf(
+        "Sentinel-2",
+        "Sentinel-1",
+        "Landsat 8",
+        "Landsat 9"
+    )
+
+    satellite.adapter = ArrayAdapter(
+        this,
+        android.R.layout.simple_spinner_dropdown_item,
+        sources
+    )
+
+    layout.addView(satellite)
+
+    addLabel("MAXIMUM CLOUD COVER (%)")
+
+    val cloud = addInput("Cloud cover", "20")
+
+    addLabel("DATE RANGE")
+
+    val startDate = EditText(this).apply {
+        hint = "Start date: YYYY-MM-DD"
+        setText("2024-01-01")
+        inputType = InputType.TYPE_CLASS_DATETIME
+        layout.addView(this)
+    }
+
+    val endDate = EditText(this).apply {
+        hint = "End date: YYYY-MM-DD"
+        setText("2026-11-15")
+        inputType = InputType.TYPE_CLASS_DATETIME
+        layout.addView(this)
+    }
+
+    AlertDialog.Builder(this)
+        .setTitle("SATELLITE DATA CENTER")
+        .setView(ScrollView(this).apply {
+            addView(layout)
+        })
+        .setPositiveButton("PREPARE SEARCH") { _, _ ->
+
+            try {
+                val lat = latitude.text.toString().toDouble()
+                val lon = longitude.text.toString().toDouble()
+                val r = radius.text.toString().toDouble()
+                val c = cloud.text.toString().toDouble()
+
+                require(lat in -90.0..90.0) {
+                    "Invalid latitude"
+                }
+
+                require(lon in -180.0..180.0) {
+                    "Invalid longitude"
+                }
+
+                require(r > 0.0) {
+                    "Radius must be positive"
+                }
+
+                require(c in 0.0..100.0) {
+                    "Cloud cover must be between 0 and 100"
+                }
+
+                val result = """
+                    SATELLITE SEARCH PARAMETERS
+
+                    Latitude: $lat
+                    Longitude: $lon
+                    Radius: $r km
+
+                    Satellite: ${satellite.selectedItem}
+
+                    Cloud Cover: $c%
+
+                    Start: ${startDate.text}
+                    End: ${endDate.text}
+
+                    Parameters validated.
+
+                    Satellite API connection
+                    will be implemented next.
+                """.trimIndent()
+
+                AlertDialog.Builder(this)
+                    .setTitle("SEARCH CONFIGURATION")
+                    .setMessage(result)
+                    .setPositiveButton("OK", null)
+                    .show()
+
+            } catch (e: Exception) {
+
+                AlertDialog.Builder(this)
+                    .setTitle("INPUT ERROR")
+                    .setMessage(
+                        e.message ?: "Invalid coordinates"
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+        .setNegativeButton("CANCEL", null)
+        .show()
+}
 }
