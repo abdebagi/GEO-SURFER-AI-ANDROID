@@ -1,13 +1,14 @@
 package com.geosurfer.ai
+
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
-import java.time.LocalDate
 import java.util.concurrent.TimeUnit
-import kotlin.math.*
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 data class SatelliteSearchResult(
     val success: Boolean,
@@ -26,6 +27,24 @@ class SatelliteDataEngine {
     private val stacUrl =
         "https://earth-search.aws.element84.com/v1/search"
 
+    private fun isValidDate(value: String): Boolean {
+        return try {
+            val format = SimpleDateFormat(
+                "yyyy-MM-dd",
+                Locale.US
+            ).apply {
+                isLenient = false
+            }
+
+            val parsed = format.parse(value)
+
+            parsed != null && format.format(parsed) == value
+
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun createBbox(
         latitude: Double,
         longitude: Double,
@@ -39,8 +58,9 @@ class SatelliteDataEngine {
         val latOffset = radiusKm / 111.32
 
         val lonOffset = radiusKm /
-            (111.32 * cos(Math.toRadians(latitude))
-                .coerceAtLeast(0.01))
+            (111.32 * kotlin.math.cos(
+                Math.toRadians(latitude)
+            ).coerceAtLeast(0.01))
 
         return listOf(
             longitude - lonOffset,
@@ -63,31 +83,40 @@ class SatelliteDataEngine {
 
             require(maxCloudCover in 0.0..100.0)
 
+            require(isValidDate(startDate)) {
+                "Invalid start date"
+            }
+
+            require(isValidDate(endDate)) {
+                "Invalid end date"
+            }
+
+            require(endDate >= startDate) {
+                "End date must not precede start date"
+            }
+
             val bbox = createBbox(
                 latitude,
                 longitude,
                 radiusKm
             )
 
-            val start = LocalDate.parse(startDate)
-            val end = LocalDate.parse(endDate)
-
-            require(!end.isBefore(start)) {
-                "End date must not precede start date"
-            }
-
             val body = JSONObject().apply {
 
-                put("bbox", org.json.JSONArray(bbox))
+                put(
+                    "bbox",
+                    org.json.JSONArray(bbox)
+                )
 
                 put(
                     "datetime",
-                    "${start}T00:00:00Z/${end}T23:59:59Z"
+                    "${startDate}T00:00:00Z/${endDate}T23:59:59Z"
                 )
 
                 put(
                     "collections",
-                    org.json.JSONArray().put("sentinel-2-l2a")
+                    org.json.JSONArray()
+                        .put("sentinel-2-l2a")
                 )
 
                 put("limit", 100)
@@ -96,8 +125,10 @@ class SatelliteDataEngine {
                     "query",
                     JSONObject().put(
                         "eo:cloud_cover",
-                        JSONObject()
-                            .put("lte", maxCloudCover)
+                        JSONObject().put(
+                            "lte",
+                            maxCloudCover
+                        )
                     )
                 )
             }
@@ -106,8 +137,7 @@ class SatelliteDataEngine {
                 .url(stacUrl)
                 .post(
                     body.toString().toRequestBody(
-    "application/json".toMediaType()
-)
+                        "application/json".toMediaType()
                     )
                 )
                 .build()
@@ -126,14 +156,16 @@ class SatelliteDataEngine {
 
                 val json = JSONObject(responseBody)
 
-                val features = json.optJSONArray("features")
-                    ?: org.json.JSONArray()
+                val features =
+                    json.optJSONArray("features")
+                        ?: org.json.JSONArray()
 
                 val items = mutableListOf<SatelliteItem>()
 
                 for (i in 0 until features.length()) {
 
-                    val feature = features.getJSONObject(i)
+                    val feature =
+                        features.getJSONObject(i)
 
                     val properties =
                         feature.optJSONObject("properties")
@@ -143,7 +175,8 @@ class SatelliteDataEngine {
                         feature.optJSONObject("assets")
                             ?: JSONObject()
 
-                    val assetLinks = mutableMapOf<String, String>()
+                    val assetLinks =
+                        mutableMapOf<String, String>()
 
                     val keys = assetsJson.keys()
 
@@ -151,8 +184,9 @@ class SatelliteDataEngine {
 
                         val key = keys.next()
 
-                        val asset = assetsJson.optJSONObject(key)
-                            ?: continue
+                        val asset =
+                            assetsJson.optJSONObject(key)
+                                ?: continue
 
                         val href = asset.optString("href")
 
@@ -161,14 +195,34 @@ class SatelliteDataEngine {
                         }
                     }
 
-                 items.add(
-    SatelliteItem(
-        id = feature.optString("id"),
-        date = properties.optString("datetime"),
-        cloudCover = properties.optDouble(
-            "eo:cloud_cover",
-            -1.0
-        ),
-        assets = assetLinks
-    )
-) 
+                    items.add(
+                        SatelliteItem(
+                            id = feature.optString("id"),
+                            date = properties.optString("datetime"),
+                            cloudCover = properties.optDouble(
+                                "eo:cloud_cover",
+                                -1.0
+                            ),
+                            assets = assetLinks
+                        )
+                    )
+                }
+
+                SatelliteSearchResult(
+                    success = true,
+                    items = items,
+                    message = "Found ${items.size} satellite images"
+                )
+            }
+
+        } catch (e: Exception) {
+
+            SatelliteSearchResult(
+                success = false,
+                items = emptyList(),
+                message = e.message
+                    ?: "Satellite search failed"
+            )
+        }
+    }
+}
