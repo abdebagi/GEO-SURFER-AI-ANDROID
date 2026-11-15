@@ -1,5 +1,6 @@
 package com.geosurfer.ai
-
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -7,15 +8,6 @@ import java.io.IOException
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 import kotlin.math.*
-
-data class SatelliteItem(
-    val id: String,
-    val date: String,
-    val cloudCover: Double,
-    val platform: String,
-    val collection: String,
-    val assets: Map<String, String>
-)
 
 data class SatelliteSearchResult(
     val success: Boolean,
@@ -113,11 +105,9 @@ class SatelliteDataEngine {
             val request = Request.Builder()
                 .url(stacUrl)
                 .post(
-                    okhttp3.RequestBody.create(
-                        okhttp3.MediaType.parse(
-                            "application/json"
-                        ),
-                        body.toString()
+                    body.toString().toRequestBody(
+    "application/json".toMediaType()
+)
                     )
                 )
                 .build()
@@ -171,40 +161,14 @@ class SatelliteDataEngine {
                         }
                     }
 
-                    items.add(
-                        SatelliteItem(
-                            id = feature.optString("id"),
-                            date = properties.optString("datetime"),
-                            cloudCover = properties.optDouble(
-                                "eo:cloud_cover",
-                                -1.0
-                            ),
-                            platform = properties.optString(
-                                "platform",
-                                "Unknown"
-                            ),
-                            collection = feature.optString(
-                                "collection"
-                            ),
-                            assets = assetLinks
-                        )
-                    )
-                }
-
-                SatelliteSearchResult(
-                    success = true,
-                    items = items,
-                    message = "Found ${items.size} satellite images"
-                )
-            }
-
-        } catch (e: Exception) {
-
-            SatelliteSearchResult(
-                success = false,
-                items = emptyList(),
-                message = e.message ?: "Satellite search failed"
-            )
-        }
-    }
-}
+                 items.add(
+    SatelliteItem(
+        id = feature.optString("id"),
+        date = properties.optString("datetime"),
+        cloudCover = properties.optDouble(
+            "eo:cloud_cover",
+            -1.0
+        ),
+        assets = assetLinks
+    )
+) 
