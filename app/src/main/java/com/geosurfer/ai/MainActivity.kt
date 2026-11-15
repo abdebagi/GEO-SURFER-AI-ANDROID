@@ -597,46 +597,83 @@ private fun showSatelliteDataCenter() {
 
 // DISPLAY SATELLITE RESULTS
 
+// INTERACTIVE SATELLITE RESULTS
+
 private fun showSatelliteResults(
     items: List<SatelliteItem>
 ) {
 
-    val message = if (items.isEmpty()) {
+    if (items.isEmpty()) {
+        AlertDialog.Builder(this)
+            .setTitle("SATELLITE RESULTS")
+            .setMessage("No satellite images found.")
+            .setPositiveButton("OK", null)
+            .show()
+        return
+    }
 
-        "No Sentinel-2 images found for this area and date range."
+    val imageNames = items.mapIndexed { index, item ->
+        "${index + 1}. ${item.date}\n" +
+        "Cloud Cover: ${item.cloudCover}%"
+    }.toTypedArray()
+
+    AlertDialog.Builder(this)
+        .setTitle("SELECT SATELLITE IMAGE")
+        .setItems(imageNames) { _, position ->
+
+            val selected = items[position]
+
+            showSatelliteAssets(selected)
+        }
+        .setNegativeButton("CLOSE", null)
+        .show()
+}
+
+
+// DISPLAY IMAGE ASSETS
+
+private fun showSatelliteAssets(
+    item: SatelliteItem
+) {
+
+    val output = StringBuilder()
+
+    output.append("IMAGE INFORMATION\n\n")
+    output.append("ID:\n${item.id}\n\n")
+    output.append("DATE:\n${item.date}\n\n")
+    output.append("CLOUD COVER:\n${item.cloudCover}%\n\n")
+
+    output.append("AVAILABLE SATELLITE FILES\n")
+    output.append("========================\n\n")
+
+    if (item.assets.isEmpty()) {
+
+        output.append("No asset files available.")
 
     } else {
 
-        items.mapIndexed { index, item ->
+        item.assets.forEach { (name, href) ->
 
-            """
-            IMAGE ${index + 1}
-
-            ID: ${item.id}
-
-            DATE: ${item.date}
-
-            CLOUD COVER: ${item.cloudCover}%
-            """.trimIndent()
-
-        }.joinToString(
-            "\n\n--------------------\n\n"
-        )
+            output.append("FILE: $name\n")
+            output.append("LOCATION:\n$href\n\n")
+            output.append("------------------------\n\n")
+        }
     }
 
     val scroll = ScrollView(this)
 
-    val output = TextView(this).apply {
-        text = message
-        textSize = 14f
+    val text = TextView(this).apply {
+        this.text = output.toString()
+        textSize = 13f
+        typeface = Typeface.MONOSPACE
         setTextColor(Color.BLACK)
         setPadding(20, 20, 20, 20)
     }
 
-    scroll.addView(output)
+    scroll.addView(text)
 
     AlertDialog.Builder(this)
-        .setTitle("SENTINEL-2 SEARCH RESULTS")
+        .setTitle("SATELLITE FILE DETAILS")
         .setView(scroll)
         .setPositiveButton("DONE", null)
         .show()
